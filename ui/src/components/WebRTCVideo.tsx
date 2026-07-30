@@ -19,6 +19,7 @@ import {
 } from "@components/VideoOverlay";
 import OcrOverlay from "@components/OcrOverlay";
 import { keys } from "@/keyboardMappings";
+import { applyModifierRemap, DEFAULT_MODIFIER_REMAP } from "@/keyboardRemap";
 import notifications from "@/notifications";
 import { m } from "@localizations/messages.js";
 
@@ -40,7 +41,7 @@ export default function WebRTCVideo({
   const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(false);
   const [isPointerLockActive, setIsPointerLockActive] = useState(false);
-  const [isKeyboardLockActive, setIsKeyboardLockActive] = useState(false);
+  const [, setIsKeyboardLockActive] = useState(false);
 
   const { send: sendRpc } = useJsonRpc();
 
@@ -70,9 +71,17 @@ export default function WebRTCVideo({
 
   // Video enhancement settings
   const { videoSaturation, videoBrightness, videoContrast } = useSettingsStore();
+  const { modifierRemap } = useSettingsStore();
 
   // OCR mode
   const { isOcrMode } = useUiStore();
+
+  const remapPhysicalHidKey = useCallback(
+    (code: string, hidKey: number): number | null => {
+      return applyModifierRemap(code, hidKey, modifierRemap ?? DEFAULT_MODIFIER_REMAP);
+    },
+    [modifierRemap],
+  );
 
   // RTC related states
   const { peerConnection } = useRTCStore();
@@ -330,40 +339,43 @@ export default function WebRTCVideo({
       if (isOcrMode) return; // Let OCR overlay handle keys
       e.preventDefault();
       const code = getAdjustedKeyCode(e);
-      const hidKey = keys[code];
+      const rawHidKey = keys[code];
 
-      if (hidKey === undefined) {
+      if (rawHidKey === undefined) {
         console.warn(`Key down not mapped: ${code}`);
         return;
       }
 
-      // Detect Windows synthetic AltGr (CtrlLeft then AltRight within ~3ms) and cancel the synthetic Ctrl
-      if (isWindowsClient) {
-        // Buffer ControlLeft briefly; if no AltRight follows within the threshold, treat it as a real ControlLeft press.
-        if (hidKey === keys.ControlLeft) {
-          const controlLeftDownTime = e.timeStamp;
-          lastKeyDownRef.current = { hidKey, time: controlLeftDownTime };
-          setTimeout(() => {
-            if (
-              lastKeyDownRef.current?.hidKey === keys.ControlLeft &&
-              lastKeyDownRef.current.time === controlLeftDownTime
-            ) {
-              lastKeyDownRef.current = null;
-              handleKeyPress(keys.ControlLeft, true);
-            }
-          }, altGrSyntheticThresholdMs);
-          return;
-        }
+      const hidKey = remapPhysicalHidKey(code, rawHidKey);
 
+      // Detect Windows synthetic AltGr (CtrlLeft then AltRight within ~3ms) and cancel the synthetic Ctrl.
+      // Buffer on the physical ControlLeft so remapping Control still preserves AltGr.
+      if (isWindowsClient && rawHidKey === keys.ControlLeft) {
+        const controlLeftDownTime = e.timeStamp;
+        // hidKey may be null when Control is remapped to None; still buffer for AltGr cancel.
+        lastKeyDownRef.current = { hidKey: hidKey ?? 0, time: controlLeftDownTime };
+        setTimeout(() => {
+          if (lastKeyDownRef.current?.time === controlLeftDownTime) {
+            const pending = lastKeyDownRef.current.hidKey;
+            lastKeyDownRef.current = null;
+            if (pending) handleKeyPress(pending, true);
+          }
+        }, altGrSyntheticThresholdMs);
+        return;
+      }
+
+      if (isWindowsClient) {
         // If AltRight arrives shortly after ControlLeft, treat the pair as AltGr and cancel the pending ControlLeft.
         if (
-          hidKey === keys.AltRight &&
-          lastKeyDownRef.current?.hidKey === keys.ControlLeft &&
+          rawHidKey === keys.AltRight &&
+          lastKeyDownRef.current &&
           e.timeStamp - lastKeyDownRef.current.time <= altGrSyntheticThresholdMs
         ) {
           altGrLoopRef.current = true;
           lastKeyDownRef.current = null;
         }
+
+        if (hidKey === null) return;
 
         // Microsoft IME fix:
         // Effective keydown events are consumed by IME (reported as "Process"),
@@ -372,6 +384,8 @@ export default function WebRTCVideo({
           return;
         }
       }
+
+      if (hidKey === null) return;
 
       // When pressing the meta key + another key, the key will never trigger a keyup
       // event, so we need to clear the keys after a short delay
@@ -385,18 +399,8 @@ export default function WebRTCVideo({
       }
       console.debug(`Key down: ${hidKey}`);
       handleKeyPress(hidKey, true);
-
-      if (!isKeyboardLockActive && hidKey === keys.MetaLeft) {
-        // If the left meta key was just pressed and we're not keyboard locked
-        // we'll never see the keyup event because the browser is going to lose
-        // focus so set a deferred keyup after a short delay
-        setTimeout(() => {
-          console.debug(`Forcing the left meta key release`);
-          handleKeyPress(hidKey, false);
-        }, 100);
-      }
     },
-    [handleKeyPress, isKeyboardLockActive, isOcrMode, isWindowsClient],
+    [handleKeyPress, isOcrMode, isWindowsClient, remapPhysicalHidKey],
   );
 
   const keyUpHandler = useCallback(
@@ -404,30 +408,39 @@ export default function WebRTCVideo({
       if (isOcrMode) return; // Let OCR overlay handle keys
       e.preventDefault();
       const code = getAdjustedKeyCode(e);
-      const hidKey = keys[code];
+      const rawHidKey = keys[code];
 
-      if (hidKey === undefined) {
+      if (rawHidKey === undefined) {
         console.warn(`Key up not mapped: ${code}`);
         return;
       }
 
-      if (isWindowsClient) {
-        // On Windows, handle ControlLeft specially to preserve FIFO semantics with AltGr buffering.
-        if (hidKey === keys.ControlLeft) {
-          // Synthetic AltGr ControlLeft: never sent a down, swallow the release as well.
-          if (altGrLoopRef.current) {
-            altGrLoopRef.current = false;
-            return;
-          }
+      const hidKey = remapPhysicalHidKey(code, rawHidKey);
 
-          // Very fast real Ctrl tap: flush the pending down before the up.
-          if (lastKeyDownRef.current?.hidKey === keys.ControlLeft) {
-            handleKeyPress(keys.ControlLeft, true);
-          }
-
-          lastKeyDownRef.current = null;
+      if (isWindowsClient && rawHidKey === keys.ControlLeft) {
+        // Synthetic AltGr ControlLeft: never sent a down, swallow the release as well.
+        if (altGrLoopRef.current) {
+          altGrLoopRef.current = false;
+          return;
         }
 
+        // Very fast real Ctrl tap: flush the pending (possibly remapped) down before the up.
+        if (lastKeyDownRef.current) {
+          const pending = lastKeyDownRef.current.hidKey;
+          lastKeyDownRef.current = null;
+          if (pending) handleKeyPress(pending, true);
+        }
+
+        if (hidKey === null) return;
+
+        console.debug(`Key up: ${hidKey}`);
+        handleKeyPress(hidKey, false);
+        return;
+      }
+
+      if (hidKey === null) return;
+
+      if (isWindowsClient) {
         // Microsoft IME fix:
         // Synthesize the missing keydown event to ensure a complete key press cycle.
         if (["Zenkaku", "Hankaku", "ZenkakuHankaku"].includes(e.key)) {
@@ -439,7 +452,7 @@ export default function WebRTCVideo({
       console.debug(`Key up: ${hidKey}`);
       handleKeyPress(hidKey, false);
     },
-    [handleKeyPress, isOcrMode, isWindowsClient],
+    [handleKeyPress, isOcrMode, isWindowsClient, remapPhysicalHidKey],
   );
 
   const videoKeyUpHandler = useCallback((e: KeyboardEvent) => {

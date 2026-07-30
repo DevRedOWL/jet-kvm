@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   useHidStore,
@@ -9,6 +9,7 @@ import {
   VideoState,
 } from "@hooks/stores";
 import { useHidRpc } from "@hooks/useHidRpc";
+import useKeyboard from "@hooks/useKeyboard";
 import { keys, modifiers } from "@/keyboardMappings";
 import { cx } from "@/cva.config";
 import { m } from "@localizations/messages.js";
@@ -17,6 +18,7 @@ export default function InfoBar() {
   const { keysDownState } = useHidStore();
   const { mouseX, mouseY, mouseMove } = useMouseStore();
   const { rpcHidStatus } = useHidRpc();
+  const { handleKeyPress } = useKeyboard();
 
   const videoClientSize = useVideoStore(
     (state: VideoState) => `${Math.round(state.clientWidth)}x${Math.round(state.clientHeight)}`,
@@ -113,6 +115,14 @@ export default function InfoBar() {
 
     return [...modifierNames, ...keyNames].join(", ");
   }, [keysDownState, showPressedKeys]);
+
+  const pulseLockKey = useCallback(
+    (keyName: "CapsLock" | "NumLock" | "ScrollLock") => {
+      void handleKeyPress(keys[keyName], true);
+      setTimeout(() => void handleKeyPress(keys[keyName], false), 100);
+    },
+    [handleKeyPress],
+  );
 
   return (
     <div className="border-t border-t-slate-800/30 bg-white text-slate-800 dark:border-t-slate-300/20 dark:bg-slate-900 dark:text-slate-300">
@@ -211,38 +221,53 @@ export default function InfoBar() {
             </div>
           )}
 
-          <div
+          <button
+            type="button"
+            onClick={() => pulseLockKey("CapsLock")}
+            aria-pressed={keyboardLedState.caps_lock}
+            aria-label={m.info_caps_lock()}
+            title={m.info_caps_lock()}
             className={cx(
-              "shrink-0 p-1 px-1.5 text-xs",
+              "shrink-0 cursor-pointer p-1 px-1.5 text-xs hover:opacity-80",
               keyboardLedState.caps_lock
                 ? "text-black dark:text-white"
                 : "text-slate-800/20 dark:text-slate-300/20",
             )}
           >
             {m.info_caps_lock()}
-          </div>
+          </button>
 
-          <div
+          <button
+            type="button"
+            onClick={() => pulseLockKey("NumLock")}
+            aria-pressed={keyboardLedState.num_lock}
+            aria-label={m.info_num_lock()}
+            title={m.info_num_lock()}
             className={cx(
-              "shrink-0 p-1 px-1.5 text-xs",
+              "shrink-0 cursor-pointer p-1 px-1.5 text-xs hover:opacity-80",
               keyboardLedState.num_lock
                 ? "text-black dark:text-white"
                 : "text-slate-800/20 dark:text-slate-300/20",
             )}
           >
             {m.info_num_lock()}
-          </div>
+          </button>
 
-          <div
+          <button
+            type="button"
+            onClick={() => pulseLockKey("ScrollLock")}
+            aria-pressed={keyboardLedState.scroll_lock}
+            aria-label={m.info_scroll_lock()}
+            title={m.info_scroll_lock()}
             className={cx(
-              "shrink-0 p-1 px-1.5 text-xs",
+              "shrink-0 cursor-pointer p-1 px-1.5 text-xs hover:opacity-80",
               keyboardLedState.scroll_lock
                 ? "text-black dark:text-white"
                 : "text-slate-800/20 dark:text-slate-300/20",
             )}
           >
             {m.info_scroll_lock()}
-          </div>
+          </button>
 
           {keyboardLedState.compose ? (
             <div className="shrink-0 p-1 px-1.5 text-xs">{m.info_compose()}</div>

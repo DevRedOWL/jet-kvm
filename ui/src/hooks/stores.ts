@@ -2,6 +2,12 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { MAX_STEPS_PER_MACRO, MAX_TOTAL_MACROS, MAX_KEYS_PER_STEP } from "@/constants/macros";
+import {
+  DEFAULT_MODIFIER_REMAP,
+  type ModifierRemapMap,
+  type ModifierRemapSource,
+  type ModifierRemapTarget,
+} from "@/keyboardRemap";
 
 // Define the JsonRpc types for better type checking
 interface JsonRpcResponse {
@@ -392,6 +398,9 @@ export interface SettingsState {
   showPressedKeys: boolean;
   setShowPressedKeys: (show: boolean) => void;
 
+  modifierRemap: ModifierRemapMap;
+  setModifierRemapTarget: (source: ModifierRemapSource, target: ModifierRemapTarget) => void;
+
   // Video enhancement settings
   videoSaturation: number;
   setVideoSaturation: (value: number) => void;
@@ -447,6 +456,12 @@ export const useSettingsStore = create(
       showPressedKeys: true,
       setShowPressedKeys: (show: boolean) => set({ showPressedKeys: show }),
 
+      modifierRemap: { ...DEFAULT_MODIFIER_REMAP },
+      setModifierRemapTarget: (source, target) =>
+        set(state => ({
+          modifierRemap: { ...state.modifierRemap, [source]: target },
+        })),
+
       // Video enhancement settings with default values (1.0 = normal)
       videoSaturation: 1.0,
       setVideoSaturation: (value: number) => set({ videoSaturation: value }),
@@ -466,6 +481,57 @@ export const useSettingsStore = create(
     {
       name: "settings",
       storage: createJSONStorage(() => localStorage),
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<SettingsState> & {
+          remapCmdToCtrl?: boolean;
+          specialKeyBindings?: Record<string, string>;
+        };
+        const merged = { ...current, ...p } as SettingsState;
+
+        merged.modifierRemap = {
+          ...DEFAULT_MODIFIER_REMAP,
+          ...(p.modifierRemap ?? {}),
+        };
+
+        // Drop removed targets from persisted state
+        for (const source of Object.keys(merged.modifierRemap) as ModifierRemapSource[]) {
+          const target = merged.modifierRemap[source] as string;
+          if (target === "Escape" || target === "MetaRight") {
+            merged.modifierRemap[source] = DEFAULT_MODIFIER_REMAP[source];
+          }
+        }
+        delete (merged.modifierRemap as Record<string, unknown>).Escape;
+
+        // Migrate previous Cmd→Ctrl checkbox
+        if (!p.modifierRemap && !p.specialKeyBindings && p.remapCmdToCtrl) {
+          merged.modifierRemap.Meta = "Control";
+        }
+
+        // Migrate inverted specialKeyBindings (remote←physical) back to physical→target
+        if (!p.modifierRemap && p.specialKeyBindings) {
+          const inv = p.specialKeyBindings;
+          const next = { ...DEFAULT_MODIFIER_REMAP };
+          for (const [remote, press] of Object.entries(inv)) {
+            if (press === "None" || press === "MetaLeft" || press === "MetaRight") continue;
+            if (remote === "Escape") continue;
+            const source = (press === "Meta" ? "Meta" : press) as ModifierRemapSource;
+            if (!(source in next)) continue;
+            if (
+              remote === "CapsLock" ||
+              remote === "Control" ||
+              remote === "Alt" ||
+              remote === "Meta"
+            ) {
+              next[source] = remote;
+            }
+          }
+          merged.modifierRemap = next;
+        }
+
+        delete (merged as Partial<SettingsState> & { deleteKeyAction?: unknown }).deleteKeyAction;
+
+        return merged;
+      },
     },
   ),
 );

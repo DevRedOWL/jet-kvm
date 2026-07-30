@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { useSettingsStore } from "@hooks/stores";
 import { JsonRpcResponse, useJsonRpc } from "@hooks/useJsonRpc";
@@ -7,12 +7,50 @@ import { Checkbox } from "@components/Checkbox";
 import { SelectMenuBasic } from "@components/SelectMenuBasic";
 import { SettingsItem } from "@components/SettingsItem";
 import { SettingsPageHeader } from "@components/SettingsPageheader";
+import {
+  MODIFIER_REMAP_SOURCES,
+  MODIFIER_REMAP_TARGETS,
+  type ModifierRemapSource,
+  type ModifierRemapTarget,
+} from "@/keyboardRemap";
+import { isMac, isWindows } from "@/utils";
 import notifications from "@/notifications";
 import { m } from "@localizations/messages.js";
 
+function sourceLabel(source: ModifierRemapSource): string {
+  switch (source) {
+    case "CapsLock":
+      return "Caps Lock (⇪)";
+    case "Control":
+      return "Control (⌃)";
+    case "Alt":
+      return "Option (⌥)";
+    case "Meta":
+      if (isMac()) return "Command (⌘)";
+      if (isWindows()) return "Windows (⊞)";
+      return "Meta (❖)";
+  }
+}
+
+function targetLabel(target: ModifierRemapTarget): string {
+  switch (target) {
+    case "CapsLock":
+      return "⇪ Caps Lock";
+    case "Control":
+      return "⌃ Control";
+    case "Alt":
+      return "⌥ Option";
+    case "Meta":
+      return "⊞ / ⌘ Meta";
+    case "None":
+      return m.keyboard_remap_target_none();
+  }
+}
+
 export default function SettingsKeyboardRoute() {
   const { setKeyboardLayout } = useSettingsStore();
-  const { showPressedKeys, setShowPressedKeys } = useSettingsStore();
+  const { showPressedKeys, setShowPressedKeys, modifierRemap, setModifierRemapTarget } =
+    useSettingsStore();
   const { selectedKeyboard, keyboardOptions } = useKeyboardLayout();
 
   const { send } = useJsonRpc();
@@ -42,6 +80,11 @@ export default function SettingsKeyboardRoute() {
       });
     },
     [send, setKeyboardLayout],
+  );
+
+  const targetOptions = useMemo(
+    () => MODIFIER_REMAP_TARGETS.map(target => ({ value: target, label: targetLabel(target) })),
+    [],
   );
 
   return (
@@ -77,6 +120,38 @@ export default function SettingsKeyboardRoute() {
             onChange={e => setShowPressedKeys(e.target.checked)}
           />
         </SettingsItem>
+      </div>
+
+      <div className="space-y-3">
+        <div className="select-none">
+          <h3 className="text-base font-semibold text-black dark:text-white">
+            {m.keyboard_modifier_remap_title()}
+          </h3>
+          <p className="text-sm text-slate-700 dark:text-slate-300">
+            {m.keyboard_modifier_remap_description()}
+          </p>
+        </div>
+        <div className="space-y-2">
+          {MODIFIER_REMAP_SOURCES.map(source => (
+            <SettingsItem key={source} size="SM" title={sourceLabel(source)} description=" ">
+              <div className="w-56">
+                <SelectMenuBasic
+                  size="SM"
+                  label=""
+                  fullWidth
+                  value={modifierRemap[source]}
+                  onChange={e =>
+                    setModifierRemapTarget(source, e.target.value as ModifierRemapTarget)
+                  }
+                  options={targetOptions}
+                />
+              </div>
+            </SettingsItem>
+          ))}
+        </div>
+        <p className="text-xs text-slate-600 dark:text-slate-400">
+          {m.keyboard_modifier_remap_long_description()}
+        </p>
       </div>
     </div>
   );

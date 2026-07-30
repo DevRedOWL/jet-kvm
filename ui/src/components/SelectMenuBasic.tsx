@@ -61,7 +61,12 @@ export const SelectMenuBasic = React.forwardRef<HTMLSelectElement, SelectMenuPro
         )}
       >
         {label && <FieldLabel label={label} id={id} />}
-        <Card className="w-auto border! border-solid border-slate-800/30! shadow-xs outline-0 dark:border-slate-300/30!">
+        <Card
+          className={clsx(
+            fullWidth ? "w-full" : "w-auto",
+            "border! border-solid border-slate-800/30! shadow-xs outline-0 dark:border-slate-300/30!",
+          )}
+        >
           <select
             ref={ref}
             name={name}
