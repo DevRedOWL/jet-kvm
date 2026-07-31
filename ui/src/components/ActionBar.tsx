@@ -5,6 +5,7 @@ import {
   LuExternalLink,
   LuHardDrive,
   LuMaximize,
+  LuMousePointer2,
   LuScanText,
   LuSettings,
   LuSignal,
@@ -41,7 +42,12 @@ export default function Actionbar({
   requestFullscreen: () => Promise<void>;
 }) {
   const { navigateTo } = useDeviceUiNavigation();
-  const { isVirtualKeyboardEnabled, setVirtualKeyboardEnabled } = useHidStore();
+  const {
+    isVirtualKeyboardEnabled,
+    setVirtualKeyboardEnabled,
+    isVirtualTrackpadEnabled,
+    setVirtualTrackpadEnabled,
+  } = useHidStore();
   const {
     setDisableVideoFocusTrap,
     terminalType,
@@ -261,13 +267,41 @@ export default function Actionbar({
             </Popover>
           </div>
           <div className="hidden lg:block">
-            <Button
-              size="XS"
-              theme="light"
-              text={m.action_bar_virtual_keyboard()}
-              LeadingIcon={FaKeyboard}
-              onClick={() => setVirtualKeyboardEnabled(!isVirtualKeyboardEnabled)}
-            />
+            <SplitButtonGroup>
+              <SplitButtonPrimary
+                icon={isVirtualTrackpadEnabled ? LuMousePointer2 : FaKeyboard}
+                label={
+                  isVirtualTrackpadEnabled
+                    ? m.action_bar_virtual_trackpad()
+                    : m.action_bar_virtual_keyboard()
+                }
+                onClick={() => {
+                  if (isVirtualTrackpadEnabled) {
+                    setVirtualTrackpadEnabled(false);
+                  } else if (isVirtualKeyboardEnabled) {
+                    setVirtualKeyboardEnabled(false);
+                  } else {
+                    setVirtualKeyboardEnabled(true);
+                  }
+                }}
+              />
+              <SplitButtonCaret
+                menuItems={[
+                  {
+                    label: m.action_bar_virtual_keyboard(),
+                    icon: FaKeyboard,
+                    active: isVirtualKeyboardEnabled,
+                    onClick: () => setVirtualKeyboardEnabled(!isVirtualKeyboardEnabled),
+                  },
+                  {
+                    label: m.action_bar_virtual_trackpad(),
+                    icon: LuMousePointer2,
+                    active: isVirtualTrackpadEnabled,
+                    onClick: () => setVirtualTrackpadEnabled(!isVirtualTrackpadEnabled),
+                  },
+                ]}
+              />
+            </SplitButtonGroup>
           </div>
         </div>
 
@@ -300,13 +334,41 @@ export default function Actionbar({
           </Popover>
 
           <div className="block lg:hidden">
-            <Button
-              size="XS"
-              theme="light"
-              text={m.action_bar_virtual_keyboard()}
-              LeadingIcon={FaKeyboard}
-              onClick={() => setVirtualKeyboardEnabled(!isVirtualKeyboardEnabled)}
-            />
+            <SplitButtonGroup>
+              <SplitButtonPrimary
+                icon={isVirtualTrackpadEnabled ? LuMousePointer2 : FaKeyboard}
+                label={
+                  isVirtualTrackpadEnabled
+                    ? m.action_bar_virtual_trackpad()
+                    : m.action_bar_virtual_keyboard()
+                }
+                onClick={() => {
+                  if (isVirtualTrackpadEnabled) {
+                    setVirtualTrackpadEnabled(false);
+                  } else if (isVirtualKeyboardEnabled) {
+                    setVirtualKeyboardEnabled(false);
+                  } else {
+                    setVirtualKeyboardEnabled(true);
+                  }
+                }}
+              />
+              <SplitButtonCaret
+                menuItems={[
+                  {
+                    label: m.action_bar_virtual_keyboard(),
+                    icon: FaKeyboard,
+                    active: isVirtualKeyboardEnabled,
+                    onClick: () => setVirtualKeyboardEnabled(!isVirtualKeyboardEnabled),
+                  },
+                  {
+                    label: m.action_bar_virtual_trackpad(),
+                    icon: LuMousePointer2,
+                    active: isVirtualTrackpadEnabled,
+                    onClick: () => setVirtualTrackpadEnabled(!isVirtualTrackpadEnabled),
+                  },
+                ]}
+              />
+            </SplitButtonGroup>
           </div>
           <div className="hidden md:block">
             <Button

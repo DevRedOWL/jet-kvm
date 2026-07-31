@@ -611,6 +611,9 @@ export interface HidState {
   isVirtualKeyboardEnabled: boolean;
   setVirtualKeyboardEnabled: (enabled: boolean) => void;
 
+  isVirtualTrackpadEnabled: boolean;
+  setVirtualTrackpadEnabled: (enabled: boolean) => void;
+
   isPasteInProgress: boolean;
   setPasteModeEnabled: (enabled: boolean) => void;
 
@@ -633,7 +636,20 @@ export const useHidStore = create<HidState>(set => ({
   setKeysDownState: (state: KeysDownState): void => set({ keysDownState: state }),
 
   isVirtualKeyboardEnabled: false,
-  setVirtualKeyboardEnabled: (enabled: boolean): void => set({ isVirtualKeyboardEnabled: enabled }),
+  setVirtualKeyboardEnabled: (enabled: boolean): void =>
+    set(
+      enabled
+        ? { isVirtualKeyboardEnabled: true, isVirtualTrackpadEnabled: false }
+        : { isVirtualKeyboardEnabled: false },
+    ),
+
+  isVirtualTrackpadEnabled: false,
+  setVirtualTrackpadEnabled: (enabled: boolean): void =>
+    set(
+      enabled
+        ? { isVirtualTrackpadEnabled: true, isVirtualKeyboardEnabled: false }
+        : { isVirtualTrackpadEnabled: false },
+    ),
 
   isPasteInProgress: false,
   setPasteModeEnabled: (enabled: boolean): void => set({ isPasteInProgress: enabled }),

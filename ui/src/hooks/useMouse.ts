@@ -48,6 +48,28 @@ export default function useMouse() {
     [send, reportRelMouseEvent, setMouseMove, mouseMode, rpcHidReady],
   );
 
+  const sendTrackpadRelMouse = useCallback(
+    (dx: number, dy: number, buttons: number) => {
+      // Chunk to int8 range expected by MouseReport / relMouseReport.
+      let remainingDx = Math.round(calcDelta(dx));
+      let remainingDy = Math.round(calcDelta(dy));
+      const b = buttons & 0x1f;
+      do {
+        const chunkDx = Math.max(-127, Math.min(127, remainingDx));
+        const chunkDy = Math.max(-127, Math.min(127, remainingDy));
+        if (rpcHidReady) {
+          reportRelMouseEvent(chunkDx, chunkDy, b);
+        } else {
+          send("relMouseReport", { dx: chunkDx, dy: chunkDy, buttons: b });
+        }
+        remainingDx -= chunkDx;
+        remainingDy -= chunkDy;
+      } while (remainingDx !== 0 || remainingDy !== 0);
+      setMouseMove({ x: dx, y: dy, buttons: b });
+    },
+    [send, reportRelMouseEvent, setMouseMove, rpcHidReady],
+  );
+
   const getRelMouseMoveHandler = useCallback(
     () => (e: MouseEvent) => {
       if (mouseMode !== "relative") return;
@@ -162,5 +184,6 @@ export default function useMouse() {
     getAbsMouseMoveHandler,
     getMouseWheelHandler,
     resetMousePosition,
+    sendTrackpadRelMouse,
   };
 }

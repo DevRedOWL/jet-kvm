@@ -5,9 +5,16 @@ import { cx } from "@/cva.config";
 import { isWindows } from "@/utils";
 import useKeyboard from "@hooks/useKeyboard";
 import useMouse from "@hooks/useMouse";
-import { useRTCStore, useSettingsStore, useUiStore, useVideoStore } from "@hooks/stores";
+import {
+  useHidStore,
+  useRTCStore,
+  useSettingsStore,
+  useUiStore,
+  useVideoStore,
+} from "@hooks/stores";
 import { JsonRpcResponse, useJsonRpc } from "@hooks/useJsonRpc";
 import VirtualKeyboard from "@components/VirtualKeyboard";
+import VirtualTrackpad from "@components/VirtualTrackpad";
 import Actionbar from "@components/ActionBar";
 import MacroBar from "@components/MacroBar";
 import InfoBar from "@components/InfoBar";
@@ -75,6 +82,7 @@ export default function WebRTCVideo({
 
   // OCR mode
   const { isOcrMode } = useUiStore();
+  const { isVirtualTrackpadEnabled } = useHidStore();
 
   const remapPhysicalHidKey = useCallback(
     (code: string, hidKey: number): number | null => {
@@ -587,6 +595,9 @@ export default function WebRTCVideo({
     function setMouseModeEventListeners() {
       const videoElmRefValue = videoElm.current;
       if (!videoElmRefValue) return;
+      // Virtual trackpad owns mouse input — keep video from stealing abs/rel moves
+      // when the pointer drifts off the pad (esp. DevTools mobile emulation).
+      if (isVirtualTrackpadEnabled) return;
 
       const isRelativeMouseMode = settings.mouseMode === "relative";
       const mouseHandler = isRelativeMouseMode ? relMouseMoveHandler : absMouseMoveHandler;
@@ -637,6 +648,7 @@ export default function WebRTCVideo({
     [
       isPointerLockActive,
       isPointerLockPossible,
+      isVirtualTrackpadEnabled,
       requestPointerLock,
       absMouseMoveHandler,
       relMouseMoveHandler,
@@ -718,58 +730,64 @@ export default function WebRTCVideo({
                 <div className="grid grow grid-rows-(--grid-bodyFooter) overflow-hidden">
                   {/* In relative mouse mode and under https, we enable the pointer lock, and to do so we need a bar to show the user to click on the video to enable mouse control */}
                   <PointerLockBar show={showPointerLockBar} />
-                  <div className="relative mx-4 my-2 flex items-center justify-center overflow-hidden">
-                    <div
-                      ref={fullscreenContainerRef}
-                      className="relative flex h-full w-full items-center justify-center"
-                    >
-                      <video
-                        ref={videoElm}
-                        autoPlay
-                        controls={false}
-                        onPlaying={onVideoPlaying}
-                        onPlay={onVideoPlaying}
-                        muted
-                        playsInline
-                        disablePictureInPicture
-                        controlsList="nofullscreen"
-                        style={videoStyle}
-                        className={cx("h-full w-full object-contain transition-all duration-1000", {
-                          "cursor-none": settings.isCursorHidden,
-                          "pointer-events-none": isOcrMode,
-                          "opacity-0!":
-                            isVideoLoading ||
-                            hdmiError ||
-                            hasConnectionIssues ||
-                            peerConnectionState !== "connected",
-                          "opacity-60!": showPointerLockBar,
-                          "animate-slideUpFade": isPlaying,
-                        })}
-                      />
-                      {audioEnabled && <audio ref={audioElm} autoPlay playsInline hidden />}
-                      <OcrOverlay />
-                      {peerConnection?.connectionState == "connected" && !hasConnectionIssues && (
-                        <div
-                          style={{ animationDuration: "500ms" }}
-                          className="pointer-events-none absolute inset-0 flex animate-slideUpFade items-center justify-center"
-                        >
-                          <div className="relative h-full w-full rounded-md">
-                            <LoadingVideoOverlay show={isVideoLoading} />
-                            <HDMIErrorOverlay show={hdmiError} hdmiState={hdmiState} />
-                            <NoAutoplayPermissionsOverlay
-                              show={hasNoAutoPlayPermissions}
-                              onPlayClick={() => {
-                                videoElm.current?.play();
-                                audioElm.current
-                                  ?.play()
-                                  .then(() => setAudioAutoplayBlocked(false))
-                                  .catch(() => undefined);
-                              }}
-                            />
+                  <div className="flex min-h-0 overflow-hidden">
+                    <div className="relative mx-4 my-2 flex min-w-0 flex-1 items-center justify-center overflow-hidden">
+                      <div
+                        ref={fullscreenContainerRef}
+                        className="relative flex h-full w-full items-center justify-center"
+                      >
+                        <video
+                          ref={videoElm}
+                          autoPlay
+                          controls={false}
+                          onPlaying={onVideoPlaying}
+                          onPlay={onVideoPlaying}
+                          muted
+                          playsInline
+                          disablePictureInPicture
+                          controlsList="nofullscreen"
+                          style={videoStyle}
+                          className={cx(
+                            "h-full w-full object-contain transition-all duration-1000",
+                            {
+                              "cursor-none": settings.isCursorHidden,
+                              "pointer-events-none": isOcrMode || isVirtualTrackpadEnabled,
+                              "opacity-0!":
+                                isVideoLoading ||
+                                hdmiError ||
+                                hasConnectionIssues ||
+                                peerConnectionState !== "connected",
+                              "opacity-60!": showPointerLockBar,
+                              "animate-slideUpFade": isPlaying,
+                            },
+                          )}
+                        />
+                        {audioEnabled && <audio ref={audioElm} autoPlay playsInline hidden />}
+                        <OcrOverlay />
+                        {peerConnection?.connectionState == "connected" && !hasConnectionIssues && (
+                          <div
+                            style={{ animationDuration: "500ms" }}
+                            className="pointer-events-none absolute inset-0 flex animate-slideUpFade items-center justify-center"
+                          >
+                            <div className="relative h-full w-full rounded-md">
+                              <LoadingVideoOverlay show={isVideoLoading} />
+                              <HDMIErrorOverlay show={hdmiError} hdmiState={hdmiState} />
+                              <NoAutoplayPermissionsOverlay
+                                show={hasNoAutoPlayPermissions}
+                                onPlayClick={() => {
+                                  videoElm.current?.play();
+                                  audioElm.current
+                                    ?.play()
+                                    .then(() => setAudioAutoplayBlocked(false))
+                                    .catch(() => undefined);
+                                }}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
+                    <VirtualTrackpad />
                   </div>
                   <VirtualKeyboard />
                 </div>
