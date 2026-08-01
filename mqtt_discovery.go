@@ -413,7 +413,10 @@ func (m *MQTTManager) publishHADiscovery() {
 		m.removeDiscovery("button", "reboot")
 	}
 
-	m.publishMacroDiscovery(device, availTopic, availTemplate, actionsEnabled)
+	macroButtons := actionsEnabled && config.MqttConfig.haMacroButtonsEnabled()
+	mediaButtons := actionsEnabled && config.MqttConfig.haMediaButtonsEnabled()
+	m.publishMacroDiscovery(device, availTopic, availTemplate, macroButtons)
+	m.publishMediaDiscovery(device, availTopic, availTemplate, mediaButtons)
 
 	// Firmware Update: always published, but command_topic only when actions enabled.
 	// NOTE: Do NOT use value_template/latest_version_template here — HA needs to parse
@@ -727,6 +730,36 @@ func (m *MQTTManager) removeMacroDiscovery() {
 	m.lastMacroDiscoveryIDs = nil
 }
 
+// publishMediaDiscovery publishes HA buttons for host media keys (Consumer Control).
+// Native MQTT media_player discovery is not supported by Home Assistant, so buttons
+// share one command topic (media/set) and can also feed a Universal Media Player.
+func (m *MQTTManager) publishMediaDiscovery(device *haDevice, availTopic, availTemplate string, actionsEnabled bool) {
+	if !actionsEnabled {
+		m.removeMediaDiscovery()
+		return
+	}
+
+	cmdTopic := m.topic("media", "set")
+	for _, btn := range mqttMediaButtons {
+		m.publishDiscovery("button", btn.objectID, haDiscoveryPayload{
+			Name:              btn.name,
+			UniqueID:          fmt.Sprintf("jetkvm_%s_%s", m.deviceID, btn.objectID),
+			CommandTopic:      cmdTopic,
+			PayloadPress:      btn.payload,
+			Icon:              btn.icon,
+			AvailabilityTopic: availTopic,
+			AvailTemplate:     availTemplate,
+			Device:            device,
+		})
+	}
+}
+
+func (m *MQTTManager) removeMediaDiscovery() {
+	for _, btn := range mqttMediaButtons {
+		m.removeDiscovery("button", btn.objectID)
+	}
+}
+
 // removeDCDiscovery removes all DC-related HA discovery entities.
 func (m *MQTTManager) removeDCDiscovery() {
 	m.removeDiscovery("sensor", "voltage")
@@ -764,6 +797,7 @@ func (m *MQTTManager) removeAllDiscovery() {
 	m.removeDiscovery("binary_sensor", "jiggler")
 	m.removeDiscovery("button", "reboot")
 	m.removeMacroDiscovery()
+	m.removeMediaDiscovery()
 	m.removeDiscovery("update", "firmware")
 
 	// Extension-specific entities (both switch and binary_sensor variants)

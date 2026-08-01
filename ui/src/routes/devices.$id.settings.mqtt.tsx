@@ -24,6 +24,8 @@ interface MQTTSettings {
   tls_insecure: boolean;
   enable_ha_discovery: boolean;
   enable_actions: boolean;
+  enable_ha_macro_buttons: boolean;
+  enable_ha_media_buttons: boolean;
   debounce_ms: number;
 }
 
@@ -74,6 +76,8 @@ export default function SettingsMqttRoute() {
     tls_insecure: false,
     enable_ha_discovery: true,
     enable_actions: true,
+    enable_ha_macro_buttons: false,
+    enable_ha_media_buttons: false,
     debounce_ms: 500,
   });
 
@@ -101,7 +105,11 @@ export default function SettingsMqttRoute() {
         return;
       }
       const result = resp.result as MQTTSettings;
-      setSettings(result);
+      setSettings({
+        ...result,
+        enable_ha_macro_buttons: result.enable_ha_macro_buttons ?? false,
+        enable_ha_media_buttons: result.enable_ha_media_buttons ?? false,
+      });
       setPortMode(isDefaultPort(result.port) ? "default" : "custom");
       setTopicMode(result.base_topic === DEFAULT_BASE_TOPIC ? "default" : "custom");
       settle();
@@ -295,7 +303,7 @@ export default function SettingsMqttRoute() {
           />
         </SettingsItem>
 
-        {settings.enabled && (
+        {(settings.enabled && (
           <>
             <SettingsItem title={m.mqtt_broker_label()} description={m.mqtt_broker_description()}>
               <InputField
@@ -416,6 +424,30 @@ export default function SettingsMqttRoute() {
                 />
               </SettingsItem>
 
+              {settings.enable_ha_discovery && (
+                <NestedSettingsGroup>
+                  <SettingsItem
+                    title={m.mqtt_ha_macro_buttons_title()}
+                    description={m.mqtt_ha_macro_buttons_description()}
+                  >
+                    <Checkbox
+                      checked={settings.enable_ha_macro_buttons}
+                      onChange={e => updateField("enable_ha_macro_buttons", e.target.checked)}
+                    />
+                  </SettingsItem>
+
+                  <SettingsItem
+                    title={m.mqtt_ha_media_buttons_title()}
+                    description={m.mqtt_ha_media_buttons_description()}
+                  >
+                    <Checkbox
+                      checked={settings.enable_ha_media_buttons}
+                      onChange={e => updateField("enable_ha_media_buttons", e.target.checked)}
+                    />
+                  </SettingsItem>
+                </NestedSettingsGroup>
+              )}
+
               <SettingsItem
                 title={m.mqtt_base_topic_label()}
                 description={m.mqtt_base_topic_description()}
@@ -487,7 +519,7 @@ export default function SettingsMqttRoute() {
               />
             </div>
           </>
-        ) || (
+        )) || (
           <>
             <div className="flex items-center gap-x-2 pt-2">
               <Button

@@ -21,6 +21,7 @@ func (m *MQTTManager) subscribeCommands() {
 		m.topic("reboot", "set"):          m.handleRebootCommand,
 		m.topic("update", "install"):      m.handleUpdateInstallCommand,
 		m.topic("virtual_media", "set"):   m.handleVirtualMediaCommand,
+		m.topic("media", "set"):           m.handleMediaCommand,
 	}
 
 	for topic, handler := range commands {

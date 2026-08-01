@@ -31,7 +31,18 @@ type MQTTConfig struct {
 	TLSInsecure       bool   `json:"tls_insecure"`
 	EnableHADiscovery bool   `json:"enable_ha_discovery"`
 	EnableActions     bool   `json:"enable_actions"`
-	DebounceMs        int    `json:"debounce_ms"`
+	// Opt-in HA button discovery (default off — missing JSON keys stay false).
+	EnableHAMacroButtons bool `json:"enable_ha_macro_buttons"`
+	EnableHAMediaButtons bool `json:"enable_ha_media_buttons"`
+	DebounceMs           int  `json:"debounce_ms"`
+}
+
+func (c *MQTTConfig) haMacroButtonsEnabled() bool {
+	return c != nil && c.EnableHAMacroButtons
+}
+
+func (c *MQTTConfig) haMediaButtonsEnabled() bool {
+	return c != nil && c.EnableHAMediaButtons
 }
 
 var mqttManager *MQTTManager

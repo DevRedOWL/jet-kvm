@@ -575,7 +575,8 @@ func (m *MQTTManager) onMacrosChanged() {
 		device := m.haDeviceInfo()
 		availTopic := m.topic("status")
 		availTemplate := "{{ 'online' if value_json.online else 'offline' }}"
-		m.publishMacroDiscovery(device, availTopic, availTemplate, m.actionsAllowed())
+		macroButtons := m.actionsAllowed() && config.MqttConfig.haMacroButtonsEnabled()
+		m.publishMacroDiscovery(device, availTopic, availTemplate, macroButtons)
 	}
 	m.publishMacroState()
 }
