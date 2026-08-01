@@ -66,6 +66,7 @@ type UsbGadget struct {
 	keyboardLock    sync.Mutex
 	wakeHidFile     *os.File
 	wakeHidLock     sync.Mutex
+	consumerState   byte // last written consumer bitfield (Report ID 2 on hidg0)
 	absMouseHidFile *os.File
 	absMouseLock    sync.Mutex
 	relMouseHidFile *os.File
@@ -205,6 +206,7 @@ func (u *UsbGadget) Close() error {
 func (u *UsbGadget) ResetHIDFiles() {
 	u.keyboardLock.Lock()
 	u.closeKeyboardHidFileLocked()
+	u.consumerState = 0
 	unlockWithLog(&u.keyboardLock, u.log, "keyboardHidFile reset")
 
 	u.wakeHidLock.Lock()

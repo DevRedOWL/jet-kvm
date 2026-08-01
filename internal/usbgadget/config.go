@@ -51,7 +51,7 @@ var defaultGadgetConfig = map[string]gadgetConfigItem{
 			"configuration": "Config 1: HID",
 		},
 	},
-	// keyboard HID
+	// keyboard HID (includes Consumer Control Report ID 2 — see hid_consumer.go)
 	"keyboard": keyboardConfig,
 	"wake_hid": wakeHIDConfig,
 	// mouse HID

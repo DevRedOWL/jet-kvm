@@ -130,6 +130,11 @@ export const keys = {
   Lang8: 0x97,
   Lang9: 0x98,
   Menu: 0x76,
+  // Media* sentinels (0xF1–0xF4) are routed to USB Consumer Control on device
+  MediaPlayPause: 0xf1,
+  MediaStop: 0xf4,
+  MediaTrackNext: 0xf2,
+  MediaTrackPrevious: 0xf3,
   MetaLeft: 0xe3,
   MetaRight: 0xe7,
   Minus: 0x2d,
@@ -210,7 +215,7 @@ export const keys = {
   PageDown: 0x4e,
   PageUp: 0x4b,
   Paste: 0x7d,
-  Pause: 0x48,
+  Pause: 0x48, // Pause/Break key — not media Play/Pause (use MediaPlayPause)
   Period: 0x37, // aka Dot
   Power: 0x66,
   PrintScreen: 0x46,

@@ -19,13 +19,14 @@ var keyboardConfig = gadgetConfigItem{
 	path:       []string{"functions", "hid.usb0"},
 	configPath: []string{"hid.usb0"},
 	attrs: gadgetAttributes{
-		"protocol":        "1",
-		"subclass":        "1",
-		"report_length":   "8",
+		"protocol": "1",
+		"subclass": "1",
+		// Report ID (1) + modifier + reserved + 6 keys = 9; consumer reports are shorter.
+		"report_length":   "9",
 		"no_out_endpoint": "0",
 		"wakeup_on_write": "0",
 	},
-	reportDesc: keyboardReportDesc,
+	reportDesc: append(keyboardReportDesc, consumerControlReportDesc...),
 }
 
 var wakeHIDConfig = gadgetConfigItem{
@@ -63,6 +64,7 @@ var keyboardReportDesc = []byte{
 	0x05, 0x01, /* USAGE_PAGE (Generic Desktop)	          */
 	0x09, 0x06, /* USAGE (Keyboard)                       */
 	0xa1, 0x01, /* COLLECTION (Application)               */
+	0x85, keyboardReportID, /* REPORT_ID (1)              */
 	0x05, 0x07, /*   USAGE_PAGE (Keyboard)                */
 	0x19, 0xe0, /*   USAGE_MINIMUM (Keyboard LeftControl) */
 	0x29, 0xe7, /*   USAGE_MAXIMUM (Keyboard Right GUI)   */
@@ -317,12 +319,17 @@ func (u *UsbGadget) listenKeyboardEvents(ctx context.Context, file *os.File) {
 				}
 				u.resetLogSuppressionCounter("keyboardHidFileRead")
 
-				l.Trace().Int("n", n).Uints8("buf", buf).Msg("got data from keyboard")
-				if n != 1 {
-					l.Trace().Int("n", n).Msg("expected 1 byte, got")
+				l.Trace().Int("n", n).Uints8("buf", buf[:n]).Msg("got data from keyboard")
+				// With Report IDs, LED output is [reportID=1, ledBits].
+				if n == 2 && buf[0] == keyboardReportID {
+					u.updateKeyboardState(buf[1])
 					continue
 				}
-				u.updateKeyboardState(buf[0])
+				if n == 1 {
+					u.updateKeyboardState(buf[0])
+					continue
+				}
+				l.Trace().Int("n", n).Msg("unexpected LED report length")
 			}
 		}
 	}()
@@ -447,7 +454,7 @@ func (u *UsbGadget) keyboardWriteHidFileLocked(modifier byte, keys []byte) error
 		return err
 	}
 
-	_, err := u.writeWithTimeout(u.keyboardHidFile, append([]byte{modifier, 0x00}, keys[:hidKeyBufferSize]...))
+	_, err := u.writeWithTimeout(u.keyboardHidFile, append([]byte{keyboardReportID, modifier, 0x00}, keys[:hidKeyBufferSize]...))
 	if err != nil {
 		u.logWithSuppression("keyboardWriteHidFile", 100, u.log, err, "failed to write to hidg0")
 		u.keyboardLock.Lock()
@@ -517,12 +524,30 @@ func (u *UsbGadget) KeyboardReport(modifier byte, keys []byte) error {
 		keys = append(keys, make([]byte, hidKeyBufferSize-len(keys))...)
 	}
 
+	cleaned, bits := stripMediaKeys(keys)
+
 	keyboardMutex.Lock()
-	err := u.keyboardWriteHidFileLocked(modifier, keys)
-	if err != nil && !IsHIDTemporarilyUnavailableError(err) {
-		u.log.Warn().Uint8("modifier", modifier).Uints8("keys", keys).Msg("Could not write keyboard report to hidg0")
+	var err error
+	// Only touch Consumer Control when media keys are present or a prior press needs release.
+	if bits != 0 || u.consumerState != 0 {
+		consumerErr := u.ConsumerControlReport(bits)
+		if consumerErr != nil {
+			if !IsHIDTemporarilyUnavailableError(consumerErr) {
+				u.log.Warn().Uint8("modifier", modifier).Uints8("keys", cleaned).Uint8("consumerBits", bits).Msg("Could not write consumer control report")
+			}
+			err = consumerErr
+		}
 	}
-	u.UpdateKeysDown(modifier, keys)
+	keyboardErr := u.keyboardWriteHidFileLocked(modifier, cleaned)
+	if keyboardErr != nil {
+		if !IsHIDTemporarilyUnavailableError(keyboardErr) {
+			u.log.Warn().Uint8("modifier", modifier).Uints8("keys", cleaned).Msg("Could not write keyboard report to hidg0")
+		}
+		if err == nil {
+			err = keyboardErr
+		}
+	}
+	u.UpdateKeysDown(modifier, cleaned)
 	keyboardMutex.Unlock()
 
 	return err
@@ -594,6 +619,18 @@ func (u *UsbGadget) keypressReport(key byte, press bool) (KeysDownState, error) 
 	// them in sync.
 	var state = u.GetKeysDownState()
 	l.Trace().Interface("state", state).Msg("got keys down state")
+
+	if isKeyboardMediaKey(key) {
+		var bits byte
+		if press {
+			bits = u.consumerState | keyboardMediaKeyToConsumerBit(key)
+		} else {
+			bits = u.consumerState &^ keyboardMediaKeyToConsumerBit(key)
+		}
+		err := u.ConsumerControlReport(bits)
+		keyboardMutex.Unlock()
+		return u.GetKeysDownState(), err
+	}
 
 	modifier := state.Modifier
 	keys := append([]byte(nil), state.Keys...)
