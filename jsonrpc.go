@@ -1149,6 +1149,8 @@ func setKeyboardMacros(params KeyboardMacrosParams) (any, error) {
 		return nil, err
 	}
 
+	notifyMQTTMacrosChanged()
+
 	return nil, nil
 }
 

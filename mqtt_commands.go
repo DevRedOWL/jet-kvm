@@ -1,6 +1,7 @@
 package kvm
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -26,6 +27,16 @@ func (m *MQTTManager) subscribeCommands() {
 		if token := m.client.Subscribe(topic, 1, handler); token.Wait() && token.Error() != nil {
 			mqttLogger.Error().Err(token.Error()).Str("topic", topic).Msg("failed to subscribe")
 		}
+	}
+
+	macroWildcardTopic := m.topic("macro", "+", "set")
+	if token := m.client.Subscribe(macroWildcardTopic, 1, m.handleMacroCommand); token.Wait() && token.Error() != nil {
+		mqttLogger.Error().Err(token.Error()).Str("topic", macroWildcardTopic).Msg("failed to subscribe")
+	}
+
+	macroCancelTopic := m.topic("macro", "cancel", "set")
+	if token := m.client.Subscribe(macroCancelTopic, 1, m.handleMacroCancelCommand); token.Wait() && token.Error() != nil {
+		mqttLogger.Error().Err(token.Error()).Str("topic", macroCancelTopic).Msg("failed to subscribe")
 	}
 
 	mqttLogger.Info().Msg("subscribed to command topics")
@@ -222,4 +233,79 @@ func (m *MQTTManager) handleVirtualMediaCommand(client mqtt.Client, msg mqtt.Mes
 
 	// Publish updated state immediately
 	m.publishVirtualMediaState()
+}
+
+func extractMacroIDFromTopic(topic string) (string, bool) {
+	parts := strings.Split(topic, "/")
+	if len(parts) < 3 || parts[len(parts)-1] != "set" || parts[len(parts)-3] != "macro" {
+		return "", false
+	}
+	id := parts[len(parts)-2]
+	return id, id != ""
+}
+
+func (m *MQTTManager) handleMacroCommand(client mqtt.Client, msg mqtt.Message) {
+	if !m.actionsAllowed() {
+		mqttLogger.Warn().Msg("macro command rejected: actions are disabled")
+		return
+	}
+
+	id, ok := extractMacroIDFromTopic(msg.Topic())
+	if !ok {
+		mqttLogger.Warn().Str("topic", msg.Topic()).Msg("invalid macro command topic")
+		return
+	}
+	if id == "cancel" {
+		return
+	}
+
+	payload := strings.TrimSpace(string(msg.Payload()))
+	if payload != "" {
+		switch {
+		case strings.EqualFold(payload, "PRESS"):
+			// valid trigger
+		case strings.HasPrefix(payload, "{"):
+			var body struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal([]byte(payload), &body); err != nil {
+				mqttLogger.Warn().Str("payload", payload).Msg("invalid macro command payload")
+				return
+			}
+			if body.ID != "" && body.ID != id {
+				mqttLogger.Warn().Str("topic_id", id).Str("payload_id", body.ID).Msg("macro command id mismatch")
+				return
+			}
+		default:
+			mqttLogger.Warn().Str("payload", payload).Str("macro_id", id).Msg("unknown macro command")
+			return
+		}
+	}
+
+	mqttLogger.Info().Str("macro_id", id).Str("payload", payload).Msg("received macro command")
+
+	go func() {
+		m.setMacroRunning(id, true)
+		defer m.setMacroRunning(id, false)
+		if err := executeKeyboardMacroByID(id); err != nil {
+			mqttLogger.Error().Err(err).Str("macro_id", id).Msg("failed to execute macro via MQTT")
+		}
+	}()
+}
+
+func (m *MQTTManager) handleMacroCancelCommand(client mqtt.Client, msg mqtt.Message) {
+	if !m.actionsAllowed() {
+		mqttLogger.Warn().Msg("macro cancel command rejected: actions are disabled")
+		return
+	}
+
+	payload := strings.TrimSpace(string(msg.Payload()))
+	if !strings.EqualFold(payload, "PRESS") {
+		mqttLogger.Warn().Str("payload", payload).Msg("unknown macro cancel command")
+		return
+	}
+
+	mqttLogger.Info().Msg("received macro cancel command via MQTT")
+	rpcCancelKeyboardMacro()
+	m.setMacroRunning("", false)
 }

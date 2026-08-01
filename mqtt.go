@@ -59,6 +59,11 @@ type MQTTManager struct {
 	// Cached virtual media options to avoid redundant discovery republishes.
 	lastVMOptions []string
 
+	// Keyboard macro running state and HA discovery tracking.
+	macroRunningMu        sync.Mutex
+	macroRunningID        string
+	lastMacroDiscoveryIDs []string
+
 	// Cached update state to avoid calling getUpdateStatus on every tick.
 	lastUpdateCheck   time.Time
 	lastUpdatePayload *mqttUpdateState

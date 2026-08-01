@@ -65,6 +65,17 @@ type mqttVirtualMediaState struct {
 	Source       string `json:"source"`
 }
 
+type mqttMacroInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type mqttMacrosState struct {
+	Macros    []mqttMacroInfo `json:"macros"`
+	Running   bool            `json:"running"`
+	RunningID string          `json:"running_id,omitempty"`
+}
+
 // --- ATX State Publishing with Debounce ---
 
 // publishATXState publishes the current ATX state to MQTT with debounce logic.
@@ -508,6 +519,67 @@ func calculateOTAProgress(state *ota.RPCState) float32 {
 	return total / components
 }
 
+// publishMacroState publishes the current keyboard macro list and running state.
+func (m *MQTTManager) publishMacroState() {
+	if !m.IsConnected() {
+		return
+	}
+
+	m.macroRunningMu.Lock()
+	runningID := m.macroRunningID
+	m.macroRunningMu.Unlock()
+
+	macros := make([]mqttMacroInfo, 0, len(config.KeyboardMacros))
+	for i, macro := range config.KeyboardMacros {
+		if i >= MaxMacrosPerDevice {
+			break
+		}
+		name := macro.Name
+		if name == "" {
+			name = macro.ID
+		}
+		macros = append(macros, mqttMacroInfo{
+			ID:   macro.ID,
+			Name: name,
+		})
+	}
+
+	state := mqttMacrosState{
+		Macros:  macros,
+		Running: runningID != "",
+	}
+	if runningID != "" {
+		state.RunningID = runningID
+	}
+
+	m.publish(m.topic("macros", "state"), state, true)
+}
+
+// setMacroRunning updates the running macro ID and publishes the macro state.
+// When clearing (running=false), only clear if id is empty or matches the current
+// running ID so a finishing macro cannot clobber a newer one.
+func (m *MQTTManager) setMacroRunning(id string, running bool) {
+	m.macroRunningMu.Lock()
+	if running {
+		m.macroRunningID = id
+	} else if id == "" || m.macroRunningID == id {
+		m.macroRunningID = ""
+	}
+	m.macroRunningMu.Unlock()
+	m.publishMacroState()
+}
+
+// onMacrosChanged republishes macro discovery (when enabled) and macro state.
+func (m *MQTTManager) onMacrosChanged() {
+	if config.MqttConfig != nil && config.MqttConfig.EnableHADiscovery {
+		device := m.haDeviceInfo()
+		availTopic := m.topic("status")
+		availTemplate := "{{ 'online' if value_json.online else 'offline' }}"
+		m.publishMacroDiscovery(device, availTopic, availTemplate, m.actionsAllowed())
+	}
+	m.publishMacroState()
+}
+
 // publishExtendedStates publishes all extended metric states.
 func (m *MQTTManager) publishExtendedStates() {
 	// Video state
@@ -542,6 +614,9 @@ func (m *MQTTManager) publishExtendedStates() {
 
 	// Update state
 	m.publishUpdateState()
+
+	// Keyboard macro state
+	m.publishMacroState()
 }
 
 // startPeriodicStatusUpdates starts a goroutine that periodically publishes the device status.

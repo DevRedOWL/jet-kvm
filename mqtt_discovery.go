@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"strings"
 )
 
 // --- Home Assistant MQTT Discovery ---
@@ -412,6 +413,8 @@ func (m *MQTTManager) publishHADiscovery() {
 		m.removeDiscovery("button", "reboot")
 	}
 
+	m.publishMacroDiscovery(device, availTopic, availTemplate, actionsEnabled)
+
 	// Firmware Update: always published, but command_topic only when actions enabled.
 	// NOTE: Do NOT use value_template/latest_version_template here — HA needs to parse
 	// the full JSON directly to recognize in_progress and update_percentage fields.
@@ -654,6 +657,76 @@ func (m *MQTTManager) removeATXDiscovery() {
 	m.removeDiscovery("button", "atx_reset")
 }
 
+func sanitizeMacroObjectID(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+
+func macroObjectID(macroID string) string {
+	return "macro_" + sanitizeMacroObjectID(macroID)
+}
+
+func (m *MQTTManager) publishMacroDiscovery(device *haDevice, availTopic, availTemplate string, actionsEnabled bool) {
+	if actionsEnabled {
+		newObjectIDs := make([]string, 0, len(config.KeyboardMacros))
+		for i, macro := range config.KeyboardMacros {
+			if i >= MaxMacrosPerDevice {
+				break
+			}
+
+			objectID := macroObjectID(macro.ID)
+			newObjectIDs = append(newObjectIDs, objectID)
+
+			name := macro.Name
+			if name == "" {
+				name = macro.ID
+			}
+			sanitized := sanitizeMacroObjectID(macro.ID)
+
+			m.publishDiscovery("button", objectID, haDiscoveryPayload{
+				Name:              name,
+				UniqueID:          fmt.Sprintf("jetkvm_%s_macro_%s", m.deviceID, sanitized),
+				CommandTopic:      m.topic("macro", macro.ID, "set"),
+				PayloadPress:      "PRESS",
+				Icon:              "mdi:keyboard",
+				AvailabilityTopic: availTopic,
+				AvailTemplate:     availTemplate,
+				Device:            device,
+			})
+		}
+
+		for _, oldID := range m.lastMacroDiscoveryIDs {
+			found := false
+			for _, newID := range newObjectIDs {
+				if oldID == newID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.removeDiscovery("button", oldID)
+			}
+		}
+		m.lastMacroDiscoveryIDs = newObjectIDs
+	} else {
+		m.removeMacroDiscovery()
+	}
+}
+
+func (m *MQTTManager) removeMacroDiscovery() {
+	for _, objectID := range m.lastMacroDiscoveryIDs {
+		m.removeDiscovery("button", objectID)
+	}
+	m.lastMacroDiscoveryIDs = nil
+}
+
 // removeDCDiscovery removes all DC-related HA discovery entities.
 func (m *MQTTManager) removeDCDiscovery() {
 	m.removeDiscovery("sensor", "voltage")
@@ -690,6 +763,7 @@ func (m *MQTTManager) removeAllDiscovery() {
 	m.removeDiscovery("switch", "jiggler")
 	m.removeDiscovery("binary_sensor", "jiggler")
 	m.removeDiscovery("button", "reboot")
+	m.removeMacroDiscovery()
 	m.removeDiscovery("update", "firmware")
 
 	// Extension-specific entities (both switch and binary_sensor variants)
@@ -717,6 +791,7 @@ func (m *MQTTManager) cleanupAllTopics() {
 		m.topic("network", "state"),
 		m.topic("system", "state"),
 		m.topic("virtual_media", "state"),
+		m.topic("macros", "state"),
 		m.topic("update", "state"),
 		m.topic("atx", "state"),
 		m.topic("dc", "state"),
