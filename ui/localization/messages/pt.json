@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "Teclado Virtual",
     "virtual_trackpad_header": "Trackpad virtual",
     "virtual_trackpad_lmb": "BE",
+    "virtual_trackpad_mmb": "BC",
     "virtual_trackpad_rmb": "BD",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "Endereço de broadcast",

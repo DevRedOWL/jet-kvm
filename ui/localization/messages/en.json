@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "Virtual Keyboard",
     "virtual_trackpad_header": "Virtual Trackpad",
     "virtual_trackpad_lmb": "LMB",
+    "virtual_trackpad_mmb": "MMB",
     "virtual_trackpad_rmb": "RMB",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "Broadcast Address",

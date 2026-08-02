@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "虛擬鍵盤",
     "virtual_trackpad_header": "虛擬觸控板",
     "virtual_trackpad_lmb": "左鍵",
+    "virtual_trackpad_mmb": "中鍵",
     "virtual_trackpad_rmb": "右鍵",
     "wake_on_lan": "網路喚醒 (Wake On LAN)",
     "wake_on_lan_add_device_broadcast_address": "廣播位址",

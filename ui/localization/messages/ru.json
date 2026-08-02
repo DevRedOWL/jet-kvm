@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "Виртуальная клавиатура",
     "virtual_trackpad_header": "Виртуальный трекпад",
     "virtual_trackpad_lmb": "ЛКМ",
+    "virtual_trackpad_mmb": "СКМ",
     "virtual_trackpad_rmb": "ПКМ",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "Адрес широковещания",

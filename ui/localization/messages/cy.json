@@ -1106,6 +1106,7 @@
     "virtual_keyboard_header": "Bysellfwrdd Rhithwir",
     "virtual_trackpad_header": "Pad Cyffwrdd Rhithwir",
     "virtual_trackpad_lmb": "CCh",
+    "virtual_trackpad_mmb": "CC",
     "virtual_trackpad_rmb": "CD",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "Cyfeiriad Darlledu",

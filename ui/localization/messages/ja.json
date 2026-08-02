@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "仮想キーボード",
     "virtual_trackpad_header": "仮想トラックパッド",
     "virtual_trackpad_lmb": "左",
+    "virtual_trackpad_mmb": "中",
     "virtual_trackpad_rmb": "右",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "ブロードキャストアドレス",

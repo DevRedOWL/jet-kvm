@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "Virtuelt tastatur",
     "virtual_trackpad_header": "Virtuell styreplate",
     "virtual_trackpad_lmb": "VM",
+    "virtual_trackpad_mmb": "MM",
     "virtual_trackpad_rmb": "HM",
     "wake_on_lan": "Vekk på LAN",
     "wake_on_lan_add_device_broadcast_address": "Broadcast-adresse",

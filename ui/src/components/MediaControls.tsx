@@ -8,9 +8,8 @@ import {
 import { ChevronRightIcon } from "@heroicons/react/16/solid";
 import { AnimatePresence, motion } from "framer-motion";
 import { MdOutlineSettingsRemote } from "react-icons/md";
+import { PiPlayPause, PiStop } from "react-icons/pi";
 import {
-  LuCircleStop,
-  LuPlay,
   LuRotateCcw,
   LuRotateCw,
   LuSkipBack,
@@ -187,7 +186,7 @@ export default function MediaControls() {
                     aria-label={m.media_controls_play_pause()}
                     onClick={() => pulseKey("MediaPlayPause")}
                   >
-                    <LuPlay className="size-8 translate-x-0.5" />
+                    <PiPlayPause className="size-10" />
                   </button>
 
                   <button
@@ -242,7 +241,7 @@ export default function MediaControls() {
                     aria-label={m.media_controls_stop()}
                     onClick={() => pulseKey("MediaStop")}
                   >
-                    <LuCircleStop className="size-5" />
+                    <PiStop className="size-5" />
                   </button>
                   <button
                     type="button"

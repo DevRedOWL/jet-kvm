@@ -144,8 +144,8 @@ export default function useMouse() {
     [mouseMode, sendAbsMouseMovement],
   );
 
-  const getMouseWheelHandler = useCallback(
-    () => (e: WheelEvent) => {
+  const sendWheelReport = useCallback(
+    (deltaY: number, deltaX: number) => {
       if (scrollThrottling && blockWheelEvent) {
         return;
       }
@@ -156,11 +156,11 @@ export default function useMouse() {
         return Math.max(-127, Math.min(127, scrollValue));
       };
 
-      // Negate Y: browser deltaY positive = scroll down, HID Wheel positive = scroll up
-      const wheelY = (invertScroll ? 1 : -1) * clampWheel(e.deltaY);
+      // Negate Y: browser/trackpad deltaY positive = scroll down, HID Wheel positive = scroll up
+      const wheelY = (invertScroll ? 1 : -1) * clampWheel(deltaY);
       // X conventions already match (positive = right), but macOS Natural Scrolling
       // inverts both axes at OS level, so we negate X to counteract when inverted
-      const wheelX = (invertScroll ? -1 : 1) * clampWheel(e.deltaX);
+      const wheelX = (invertScroll ? -1 : 1) * clampWheel(deltaX);
 
       if (wheelY === 0 && wheelX === 0) return;
 
@@ -175,6 +175,13 @@ export default function useMouse() {
     [send, blockWheelEvent, scrollThrottling, invertScroll],
   );
 
+  const getMouseWheelHandler = useCallback(
+    () => (e: WheelEvent) => {
+      sendWheelReport(e.deltaY, e.deltaX);
+    },
+    [sendWheelReport],
+  );
+
   const resetMousePosition = useCallback(() => {
     sendAbsMouseMovement(lastAbsPos.current.x, lastAbsPos.current.y, 0);
   }, [sendAbsMouseMovement]);
@@ -185,5 +192,6 @@ export default function useMouse() {
     getMouseWheelHandler,
     resetMousePosition,
     sendTrackpadRelMouse,
+    sendWheelReport,
   };
 }

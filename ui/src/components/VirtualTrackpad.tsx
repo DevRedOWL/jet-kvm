@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon, ChevronUpIcon } from "@heroicons/react/16/solid";
 import { AnimatePresence, motion } from "framer-motion";
+import { LuMousePointer2 } from "react-icons/lu";
+import { PiMouseLeftClickFill, PiMouseRightClickFill } from "react-icons/pi";
 
 import { cx } from "@/cva.config";
 import { useHidStore } from "@hooks/stores";
@@ -18,7 +20,10 @@ const DOUBLE_TAP_MAX_DISTANCE_PX = 35;
 const LONG_PRESS_MS = 500;
 const LMB = 1;
 const RMB = 2;
+const MMB = 4;
 const CLICK_RELEASE_DELAY_MS = 50;
+const SCROLL_PX_PER_TICK = 16;
+const MMB_SCROLL_THRESHOLD_PX = 8;
 
 type Point = { x: number; y: number; time: number };
 type TapRipple = { id: number; x: number; y: number };
@@ -39,9 +44,20 @@ function haptic(pattern: number | number[] = 12) {
   }
 }
 
+function centroid(pointers: Map<number, { x: number; y: number }>) {
+  let x = 0;
+  let y = 0;
+  for (const p of pointers.values()) {
+    x += p.x;
+    y += p.y;
+  }
+  const n = pointers.size || 1;
+  return { x: x / n, y: y / n };
+}
+
 export default function VirtualTrackpad() {
   const { isVirtualTrackpadEnabled, setVirtualTrackpadEnabled } = useHidStore();
-  const { sendTrackpadRelMouse } = useMouse();
+  const { sendTrackpadRelMouse, sendWheelReport } = useMouse();
 
   const [lockedButtons, setLockedButtons] = useState(0);
   const [pressedButtons, setPressedButtons] = useState(0);
@@ -51,7 +67,9 @@ export default function VirtualTrackpad() {
 
   const heldButtonsRef = useRef(0);
   const lockedButtonsRef = useRef(0);
-  const activePointerIdRef = useRef<number | null>(null);
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const isScrollingRef = useRef(false);
+  const scrollAccumRef = useRef({ x: 0, y: 0 });
   const gestureStartRef = useRef<Point | null>(null);
   const lastPointRef = useRef<Point | null>(null);
   const lastTapRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -62,6 +80,10 @@ export default function VirtualTrackpad() {
   const longPressFiredRef = useRef<Partial<Record<number, boolean>>>({});
   const skipButtonUpRef = useRef<Partial<Record<number, boolean>>>({});
   const clickReleaseTimerRef = useRef<number | null>(null);
+  const mmbPointerIdRef = useRef<number | null>(null);
+  const mmbStartYRef = useRef<number | null>(null);
+  const mmbLastYRef = useRef<number | null>(null);
+  const mmbDidScrollRef = useRef(false);
 
   const updateLockedButtons = useCallback((next: number) => {
     lockedButtonsRef.current = next;
@@ -90,6 +112,30 @@ export default function VirtualTrackpad() {
     [sendTrackpadRelMouse],
   );
 
+  const sendScrollDelta = useCallback(
+    (dx: number, dy: number) => {
+      scrollAccumRef.current.x += dx;
+      scrollAccumRef.current.y += dy;
+
+      let ticksX = 0;
+      let ticksY = 0;
+
+      while (Math.abs(scrollAccumRef.current.y) >= SCROLL_PX_PER_TICK) {
+        ticksY += Math.sign(scrollAccumRef.current.y);
+        scrollAccumRef.current.y -= Math.sign(scrollAccumRef.current.y) * SCROLL_PX_PER_TICK;
+      }
+      while (Math.abs(scrollAccumRef.current.x) >= SCROLL_PX_PER_TICK) {
+        ticksX += Math.sign(scrollAccumRef.current.x);
+        scrollAccumRef.current.x -= Math.sign(scrollAccumRef.current.x) * SCROLL_PX_PER_TICK;
+      }
+
+      if (ticksX === 0 && ticksY === 0) return;
+      // Scale like browser wheel notches (~100) so clampWheel keeps tick magnitude.
+      sendWheelReport(ticksY * 100, ticksX * 100);
+    },
+    [sendWheelReport],
+  );
+
   const sendClick = useCallback(
     (buttonBit: number) => {
       if (clickReleaseTimerRef.current !== null) {
@@ -114,13 +160,29 @@ export default function VirtualTrackpad() {
     }
   }, []);
 
+  const clearSurfacePointers = useCallback(() => {
+    pointersRef.current.clear();
+    isScrollingRef.current = false;
+    scrollAccumRef.current = { x: 0, y: 0 };
+    gestureStartRef.current = null;
+    lastPointRef.current = null;
+  }, []);
+
   const handleSurfacePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     preventIfCancelable(e);
     e.stopPropagation();
-    if (activePointerIdRef.current !== null) return;
 
-    activePointerIdRef.current = e.pointerId;
+    const pointers = pointersRef.current;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     e.currentTarget.setPointerCapture(e.pointerId);
+
+    if (pointers.size >= 2) {
+      isScrollingRef.current = true;
+      scrollAccumRef.current = { x: 0, y: 0 };
+      gestureStartRef.current = null;
+      lastPointRef.current = null;
+      return;
+    }
 
     const point: Point = { x: e.clientX, y: e.clientY, time: Date.now() };
     gestureStartRef.current = point;
@@ -131,34 +193,65 @@ export default function VirtualTrackpad() {
     (e: React.PointerEvent<HTMLDivElement>) => {
       preventIfCancelable(e);
       e.stopPropagation();
-      if (e.pointerId !== activePointerIdRef.current || !lastPointRef.current) return;
 
+      const pointers = pointersRef.current;
+      if (!pointers.has(e.pointerId)) return;
+
+      if (pointers.size >= 2) {
+        isScrollingRef.current = true;
+        const before = centroid(pointers);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const after = centroid(pointers);
+        sendScrollDelta(after.x - before.x, after.y - before.y);
+        return;
+      }
+
+      if (!lastPointRef.current) return;
+
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       const dx = e.clientX - lastPointRef.current.x;
       const dy = e.clientY - lastPointRef.current.y;
       lastPointRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
       sendDelta(dx, dy);
     },
-    [sendDelta],
+    [sendDelta, sendScrollDelta],
   );
 
   const handleSurfacePointerUp = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       preventIfCancelable(e);
       e.stopPropagation();
-      if (e.pointerId !== activePointerIdRef.current) return;
+
+      const pointers = pointersRef.current;
+      if (!pointers.has(e.pointerId)) return;
 
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
 
+      const wasScrolling = isScrollingRef.current;
       const start = gestureStartRef.current;
       const end = { x: e.clientX, y: e.clientY, time: Date.now() };
 
-      activePointerIdRef.current = null;
+      pointers.delete(e.pointerId);
+
+      if (pointers.size < 2) {
+        isScrollingRef.current = false;
+        scrollAccumRef.current = { x: 0, y: 0 };
+      }
+
+      if (pointers.size > 0) {
+        // Still tracking another finger — no tap on this release.
+        gestureStartRef.current = null;
+        lastPointRef.current = null;
+        return;
+      }
+
       gestureStartRef.current = null;
       lastPointRef.current = null;
 
-      if (!start) return;
+      // Two-finger scroll just ended, or movement was too large — not a tap.
+      if (wasScrolling || !start) return;
 
       const duration = end.time - start.time;
       const movement = distance(start, end);
@@ -186,16 +279,149 @@ export default function VirtualTrackpad() {
   const handleSurfacePointerCancel = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     preventIfCancelable(e);
     e.stopPropagation();
-    if (e.pointerId !== activePointerIdRef.current) return;
+
+    const pointers = pointersRef.current;
+    if (!pointers.has(e.pointerId)) return;
 
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
 
-    activePointerIdRef.current = null;
-    gestureStartRef.current = null;
-    lastPointRef.current = null;
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) {
+      isScrollingRef.current = false;
+      scrollAccumRef.current = { x: 0, y: 0 };
+    }
+    if (pointers.size === 0) {
+      gestureStartRef.current = null;
+      lastPointRef.current = null;
+    }
   }, []);
+
+  const resetMmbGesture = useCallback(() => {
+    mmbPointerIdRef.current = null;
+    mmbStartYRef.current = null;
+    mmbLastYRef.current = null;
+    mmbDidScrollRef.current = false;
+    scrollAccumRef.current = { x: 0, y: 0 };
+  }, []);
+
+  const handleMmbPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      preventIfCancelable(e);
+      e.stopPropagation();
+      setPressedButtons(prev => prev | MMB);
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      if (lockedButtonsRef.current & MMB) {
+        updateLockedButtons(lockedButtonsRef.current & ~MMB);
+        sendTrackpadRelMouse(0, 0, heldButtonsRef.current);
+        skipButtonUpRef.current[MMB] = true;
+        resetMmbGesture();
+        haptic(8);
+        return;
+      }
+
+      mmbPointerIdRef.current = e.pointerId;
+      mmbStartYRef.current = e.clientY;
+      mmbLastYRef.current = e.clientY;
+      mmbDidScrollRef.current = false;
+      scrollAccumRef.current = { x: 0, y: 0 };
+      skipButtonUpRef.current[MMB] = false;
+      longPressFiredRef.current[MMB] = false;
+      clearLongPressTimer(MMB);
+      haptic(6);
+
+      longPressTimersRef.current[MMB] = window.setTimeout(() => {
+        if (mmbDidScrollRef.current) return;
+        longPressFiredRef.current[MMB] = true;
+        updateLockedButtons(lockedButtonsRef.current | MMB);
+        sendTrackpadRelMouse(0, 0, heldButtonsRef.current);
+        haptic(18);
+      }, LONG_PRESS_MS);
+    },
+    [clearLongPressTimer, resetMmbGesture, sendTrackpadRelMouse, updateLockedButtons],
+  );
+
+  const handleMmbPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      preventIfCancelable(e);
+      e.stopPropagation();
+      if (
+        e.pointerId !== mmbPointerIdRef.current ||
+        mmbStartYRef.current === null ||
+        mmbLastYRef.current === null
+      ) {
+        return;
+      }
+
+      if (
+        !mmbDidScrollRef.current &&
+        Math.abs(e.clientY - mmbStartYRef.current) < MMB_SCROLL_THRESHOLD_PX
+      ) {
+        return;
+      }
+
+      // Scroll gesture wins over hold-to-lock.
+      if (!mmbDidScrollRef.current) {
+        clearLongPressTimer(MMB);
+        longPressFiredRef.current[MMB] = false;
+      }
+
+      const dy = e.clientY - mmbLastYRef.current;
+      mmbLastYRef.current = e.clientY;
+      mmbDidScrollRef.current = true;
+      sendScrollDelta(0, dy);
+    },
+    [clearLongPressTimer, sendScrollDelta],
+  );
+
+  const handleMmbPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      preventIfCancelable(e);
+      e.stopPropagation();
+      if (e.pointerId !== mmbPointerIdRef.current && !skipButtonUpRef.current[MMB]) return;
+
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+
+      const didScroll = mmbDidScrollRef.current;
+      setPressedButtons(prev => prev & ~MMB);
+      clearLongPressTimer(MMB);
+      resetMmbGesture();
+
+      if (skipButtonUpRef.current[MMB]) {
+        skipButtonUpRef.current[MMB] = false;
+        return;
+      }
+
+      if (longPressFiredRef.current[MMB]) return;
+      if (lockedButtonsRef.current & MMB) return;
+      if (didScroll) return;
+
+      haptic(10);
+      sendClick(MMB);
+    },
+    [clearLongPressTimer, resetMmbGesture, sendClick],
+  );
+
+  const handleMmbPointerCancel = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      preventIfCancelable(e);
+      e.stopPropagation();
+      if (e.pointerId !== mmbPointerIdRef.current && !skipButtonUpRef.current[MMB]) return;
+
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+
+      setPressedButtons(prev => prev & ~MMB);
+      clearLongPressTimer(MMB);
+      resetMmbGesture();
+    },
+    [clearLongPressTimer, resetMmbGesture],
+  );
 
   const handleButtonPointerDown = useCallback(
     (bit: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -258,6 +484,7 @@ export default function VirtualTrackpad() {
   const releaseAllButtons = useCallback(
     (forceHostRelease = false) => {
       clearLongPressTimer(LMB);
+      clearLongPressTimer(MMB);
       clearLongPressTimer(RMB);
       if (clickReleaseTimerRef.current !== null) {
         window.clearTimeout(clickReleaseTimerRef.current);
@@ -266,13 +493,15 @@ export default function VirtualTrackpad() {
       setPressedButtons(0);
       setLockedButtons(0);
       lockedButtonsRef.current = 0;
+      clearSurfacePointers();
+      resetMmbGesture();
 
       if (heldButtonsRef.current !== 0 || forceHostRelease) {
         sendTrackpadRelMouse(0, 0, 0);
         heldButtonsRef.current = 0;
       }
     },
-    [clearLongPressTimer, sendTrackpadRelMouse],
+    [clearLongPressTimer, clearSurfacePointers, resetMmbGesture, sendTrackpadRelMouse],
   );
 
   const releaseAllButtonsRef = useRef(releaseAllButtons);
@@ -298,9 +527,10 @@ export default function VirtualTrackpad() {
     const locked = Boolean(lockedButtons & bit);
     const pressed = Boolean(pressedButtons & bit);
     return cx(
-      "flex h-14 min-h-[56px] flex-1 touch-none items-center justify-center rounded-sm border text-sm font-medium select-none",
+      "flex h-14 min-h-[56px] touch-none items-center justify-center rounded-sm border select-none",
       "transition-[transform,background-color,box-shadow,border-color] duration-150 ease-out",
       "active:scale-[0.97]",
+      bit === MMB ? "w-10 shrink-0" : "flex-1",
       locked
         ? "border-blue-900/60 bg-blue-700 text-white shadow-sm dark:border-blue-600"
         : cx(
@@ -347,26 +577,26 @@ export default function VirtualTrackpad() {
                 isCollapsed ? "max-md:h-auto md:h-full" : "h-full",
               )}
             >
-              <div className="relative flex items-center justify-center border-b border-b-slate-800/30 bg-white px-2 py-4 dark:border-b-slate-300/20 dark:bg-slate-800">
-                <h2 className="self-center font-sans text-sm leading-none font-medium text-slate-700 select-none dark:text-slate-300">
+              <div className="flex items-center gap-2 border-b border-b-slate-800/30 bg-white px-2 py-3 dark:border-b-slate-300/20 dark:bg-slate-800">
+                <LuMousePointer2 className="size-4 shrink-0 text-slate-500 dark:text-slate-400" />
+                <h2 className="min-w-0 flex-1 truncate font-sans text-sm leading-none font-medium text-slate-700 select-none dark:text-slate-300">
                   {m.virtual_trackpad_header()}
                 </h2>
-                <div className="absolute right-2 flex items-center gap-x-2">
-                  <Button
-                    size="XS"
-                    theme="light"
-                    className="md:hidden"
-                    LeadingIcon={isCollapsed ? ChevronUpIcon : ChevronDownIcon}
-                    onClick={() => setIsCollapsed(prev => !prev)}
-                  />
-                  <Button
-                    size="XS"
-                    theme="light"
-                    text={m.hide()}
-                    LeadingIcon={ChevronRightIcon}
-                    onClick={() => setVirtualTrackpadEnabled(false)}
-                  />
-                </div>
+                <Button
+                  size="XS"
+                  theme="light"
+                  className="shrink-0 md:hidden"
+                  LeadingIcon={isCollapsed ? ChevronUpIcon : ChevronDownIcon}
+                  onClick={() => setIsCollapsed(prev => !prev)}
+                />
+                <Button
+                  size="XS"
+                  theme="light"
+                  className="shrink-0"
+                  text={m.hide()}
+                  LeadingIcon={ChevronRightIcon}
+                  onClick={() => setVirtualTrackpadEnabled(false)}
+                />
               </div>
 
               <div
@@ -378,7 +608,7 @@ export default function VirtualTrackpad() {
                 <div
                   ref={surfaceRef}
                   className={cx(
-                    "relative m-2 min-h-0 flex-1 touch-none overflow-hidden overscroll-none rounded-sm border select-none",
+                    "relative mx-2 mt-2 mb-1 min-h-0 flex-1 touch-none overflow-hidden overscroll-none rounded-sm border select-none",
                     "border-slate-800/20 bg-slate-600/40 dark:border-slate-300/20 dark:bg-slate-800/80",
                     "transition-[background-color,box-shadow] duration-150 ease-out",
                     surfaceFlash &&
@@ -404,9 +634,10 @@ export default function VirtualTrackpad() {
                   ))}
                 </div>
 
-                <div className="flex gap-2 p-2 pt-0">
+                <div className="flex gap-1 px-2 pb-2">
                   <button
                     type="button"
+                    aria-label={m.virtual_trackpad_lmb()}
                     className={buttonClass(LMB)}
                     style={{ touchAction: "none" }}
                     onPointerDown={handleButtonPointerDown(LMB)}
@@ -414,10 +645,27 @@ export default function VirtualTrackpad() {
                     onPointerLeave={handleButtonPointerCancel(LMB)}
                     onPointerCancel={handleButtonPointerCancel(LMB)}
                   >
-                    {m.virtual_trackpad_lmb()}
+                    <PiMouseLeftClickFill className="size-6" aria-hidden />
                   </button>
                   <button
                     type="button"
+                    aria-label={m.virtual_trackpad_mmb()}
+                    className={buttonClass(MMB)}
+                    style={{ touchAction: "none" }}
+                    onPointerDown={handleMmbPointerDown}
+                    onPointerMove={handleMmbPointerMove}
+                    onPointerUp={handleMmbPointerUp}
+                    onPointerCancel={handleMmbPointerCancel}
+                  >
+                    <span className="flex flex-col items-center gap-1" aria-hidden>
+                      <span className="size-1 rounded-full bg-current opacity-70" />
+                      <span className="size-1 rounded-full bg-current opacity-70" />
+                      <span className="size-1 rounded-full bg-current opacity-70" />
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={m.virtual_trackpad_rmb()}
                     className={buttonClass(RMB)}
                     style={{ touchAction: "none" }}
                     onPointerDown={handleButtonPointerDown(RMB)}
@@ -425,7 +673,7 @@ export default function VirtualTrackpad() {
                     onPointerLeave={handleButtonPointerCancel(RMB)}
                     onPointerCancel={handleButtonPointerCancel(RMB)}
                   >
-                    {m.virtual_trackpad_rmb()}
+                    <PiMouseRightClickFill className="size-6" aria-hidden />
                   </button>
                 </div>
               </div>

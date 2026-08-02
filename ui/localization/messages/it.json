@@ -1119,6 +1119,7 @@
     "virtual_keyboard_header": "Tastiera virtuale",
     "virtual_trackpad_header": "Trackpad virtuale",
     "virtual_trackpad_lmb": "SX",
+    "virtual_trackpad_mmb": "C",
     "virtual_trackpad_rmb": "DX",
     "wake_on_lan": "Wake On LAN",
     "wake_on_lan_add_device_broadcast_address": "Indirizzo broadcast",
