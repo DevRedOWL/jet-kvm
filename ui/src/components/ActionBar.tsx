@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef } from "react";
-import { MdOutlineContentPasteGo } from "react-icons/md";
+import { MdOutlineContentPasteGo, MdOutlineSettingsRemote } from "react-icons/md";
 import {
   LuCable,
   LuExternalLink,
@@ -47,7 +47,46 @@ export default function Actionbar({
     setVirtualKeyboardEnabled,
     isVirtualTrackpadEnabled,
     setVirtualTrackpadEnabled,
+    isMediaControlsEnabled,
+    setMediaControlsEnabled,
+    lastVirtualInput,
   } = useHidStore();
+
+  const activeVirtualInput = isMediaControlsEnabled
+    ? "media"
+    : isVirtualTrackpadEnabled
+      ? "trackpad"
+      : isVirtualKeyboardEnabled
+        ? "keyboard"
+        : null;
+  const primaryVirtualInput = activeVirtualInput ?? lastVirtualInput;
+  const primaryVirtualInputIcon =
+    primaryVirtualInput === "media"
+      ? MdOutlineSettingsRemote
+      : primaryVirtualInput === "trackpad"
+        ? LuMousePointer2
+        : FaKeyboard;
+  const primaryVirtualInputLabel =
+    primaryVirtualInput === "media"
+      ? m.action_bar_media_controls()
+      : primaryVirtualInput === "trackpad"
+        ? m.action_bar_virtual_trackpad()
+        : m.action_bar_virtual_keyboard();
+  const togglePrimaryVirtualInput = () => {
+    if (activeVirtualInput === "media") {
+      setMediaControlsEnabled(false);
+    } else if (activeVirtualInput === "trackpad") {
+      setVirtualTrackpadEnabled(false);
+    } else if (activeVirtualInput === "keyboard") {
+      setVirtualKeyboardEnabled(false);
+    } else if (lastVirtualInput === "media") {
+      setMediaControlsEnabled(true);
+    } else if (lastVirtualInput === "trackpad") {
+      setVirtualTrackpadEnabled(true);
+    } else {
+      setVirtualKeyboardEnabled(true);
+    }
+  };
   const {
     setDisableVideoFocusTrap,
     terminalType,
@@ -269,21 +308,9 @@ export default function Actionbar({
           <div className="hidden lg:block">
             <SplitButtonGroup>
               <SplitButtonPrimary
-                icon={isVirtualTrackpadEnabled ? LuMousePointer2 : FaKeyboard}
-                label={
-                  isVirtualTrackpadEnabled
-                    ? m.action_bar_virtual_trackpad()
-                    : m.action_bar_virtual_keyboard()
-                }
-                onClick={() => {
-                  if (isVirtualTrackpadEnabled) {
-                    setVirtualTrackpadEnabled(false);
-                  } else if (isVirtualKeyboardEnabled) {
-                    setVirtualKeyboardEnabled(false);
-                  } else {
-                    setVirtualKeyboardEnabled(true);
-                  }
-                }}
+                icon={primaryVirtualInputIcon}
+                label={primaryVirtualInputLabel}
+                onClick={togglePrimaryVirtualInput}
               />
               <SplitButtonCaret
                 menuItems={[
@@ -298,6 +325,12 @@ export default function Actionbar({
                     icon: LuMousePointer2,
                     active: isVirtualTrackpadEnabled,
                     onClick: () => setVirtualTrackpadEnabled(!isVirtualTrackpadEnabled),
+                  },
+                  {
+                    label: m.action_bar_media_controls(),
+                    icon: MdOutlineSettingsRemote,
+                    active: isMediaControlsEnabled,
+                    onClick: () => setMediaControlsEnabled(!isMediaControlsEnabled),
                   },
                 ]}
               />
@@ -336,21 +369,9 @@ export default function Actionbar({
           <div className="block lg:hidden">
             <SplitButtonGroup>
               <SplitButtonPrimary
-                icon={isVirtualTrackpadEnabled ? LuMousePointer2 : FaKeyboard}
-                label={
-                  isVirtualTrackpadEnabled
-                    ? m.action_bar_virtual_trackpad()
-                    : m.action_bar_virtual_keyboard()
-                }
-                onClick={() => {
-                  if (isVirtualTrackpadEnabled) {
-                    setVirtualTrackpadEnabled(false);
-                  } else if (isVirtualKeyboardEnabled) {
-                    setVirtualKeyboardEnabled(false);
-                  } else {
-                    setVirtualKeyboardEnabled(true);
-                  }
-                }}
+                icon={primaryVirtualInputIcon}
+                label={primaryVirtualInputLabel}
+                onClick={togglePrimaryVirtualInput}
               />
               <SplitButtonCaret
                 menuItems={[
@@ -365,6 +386,12 @@ export default function Actionbar({
                     icon: LuMousePointer2,
                     active: isVirtualTrackpadEnabled,
                     onClick: () => setVirtualTrackpadEnabled(!isVirtualTrackpadEnabled),
+                  },
+                  {
+                    label: m.action_bar_media_controls(),
+                    icon: MdOutlineSettingsRemote,
+                    active: isMediaControlsEnabled,
+                    onClick: () => setMediaControlsEnabled(!isMediaControlsEnabled),
                   },
                 ]}
               />

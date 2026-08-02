@@ -14,6 +14,7 @@ import {
 } from "@hooks/stores";
 import { JsonRpcResponse, useJsonRpc } from "@hooks/useJsonRpc";
 import VirtualKeyboard from "@components/VirtualKeyboard";
+import MediaControls from "@components/MediaControls";
 import VirtualTrackpad from "@components/VirtualTrackpad";
 import Actionbar from "@components/ActionBar";
 import MacroBar from "@components/MacroBar";
@@ -788,6 +789,7 @@ export default function WebRTCVideo({
                       </div>
                     </div>
                     <VirtualTrackpad />
+                    <MediaControls />
                   </div>
                   <VirtualKeyboard />
                 </div>

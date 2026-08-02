@@ -601,6 +601,8 @@ export interface KeysDownState {
 
 export type USBStates = "configured" | "attached" | "not attached" | "suspended" | "addressed";
 
+export type VirtualInputMode = "keyboard" | "trackpad" | "media";
+
 export interface HidState {
   keyboardLedState: KeyboardLedState;
   setKeyboardLedState: (state: KeyboardLedState) => void;
@@ -614,6 +616,12 @@ export interface HidState {
   isVirtualTrackpadEnabled: boolean;
   setVirtualTrackpadEnabled: (enabled: boolean) => void;
 
+  isMediaControlsEnabled: boolean;
+  setMediaControlsEnabled: (enabled: boolean) => void;
+
+  // Last opened keyboard/trackpad/media panel — persisted for the ActionBar primary button
+  lastVirtualInput: VirtualInputMode;
+
   isPasteInProgress: boolean;
   setPasteModeEnabled: (enabled: boolean) => void;
 
@@ -621,43 +629,78 @@ export interface HidState {
   setUsbState: (state: USBStates) => void;
 }
 
-export const useHidStore = create<HidState>(set => ({
-  keyboardLedState: {
-    num_lock: false,
-    caps_lock: false,
-    scroll_lock: false,
-    compose: false,
-    kana: false,
-    shift: false,
-  } as KeyboardLedState,
-  setKeyboardLedState: (ledState: KeyboardLedState): void => set({ keyboardLedState: ledState }),
+export const useHidStore = create<HidState>()(
+  persist(
+    set => ({
+      keyboardLedState: {
+        num_lock: false,
+        caps_lock: false,
+        scroll_lock: false,
+        compose: false,
+        kana: false,
+        shift: false,
+      } as KeyboardLedState,
+      setKeyboardLedState: (ledState: KeyboardLedState): void =>
+        set({ keyboardLedState: ledState }),
 
-  keysDownState: { modifier: 0, keys: [0, 0, 0, 0, 0, 0] } as KeysDownState,
-  setKeysDownState: (state: KeysDownState): void => set({ keysDownState: state }),
+      keysDownState: { modifier: 0, keys: [0, 0, 0, 0, 0, 0] } as KeysDownState,
+      setKeysDownState: (state: KeysDownState): void => set({ keysDownState: state }),
 
-  isVirtualKeyboardEnabled: false,
-  setVirtualKeyboardEnabled: (enabled: boolean): void =>
-    set(
-      enabled
-        ? { isVirtualKeyboardEnabled: true, isVirtualTrackpadEnabled: false }
-        : { isVirtualKeyboardEnabled: false },
-    ),
+      isVirtualKeyboardEnabled: false,
+      setVirtualKeyboardEnabled: (enabled: boolean): void =>
+        set(
+          enabled
+            ? {
+                isVirtualKeyboardEnabled: true,
+                isVirtualTrackpadEnabled: false,
+                isMediaControlsEnabled: false,
+                lastVirtualInput: "keyboard",
+              }
+            : { isVirtualKeyboardEnabled: false },
+        ),
 
-  isVirtualTrackpadEnabled: false,
-  setVirtualTrackpadEnabled: (enabled: boolean): void =>
-    set(
-      enabled
-        ? { isVirtualTrackpadEnabled: true, isVirtualKeyboardEnabled: false }
-        : { isVirtualTrackpadEnabled: false },
-    ),
+      isVirtualTrackpadEnabled: false,
+      setVirtualTrackpadEnabled: (enabled: boolean): void =>
+        set(
+          enabled
+            ? {
+                isVirtualTrackpadEnabled: true,
+                isVirtualKeyboardEnabled: false,
+                isMediaControlsEnabled: false,
+                lastVirtualInput: "trackpad",
+              }
+            : { isVirtualTrackpadEnabled: false },
+        ),
 
-  isPasteInProgress: false,
-  setPasteModeEnabled: (enabled: boolean): void => set({ isPasteInProgress: enabled }),
+      isMediaControlsEnabled: false,
+      setMediaControlsEnabled: (enabled: boolean): void =>
+        set(
+          enabled
+            ? {
+                isMediaControlsEnabled: true,
+                isVirtualKeyboardEnabled: false,
+                isVirtualTrackpadEnabled: false,
+                lastVirtualInput: "media",
+              }
+            : { isMediaControlsEnabled: false },
+        ),
 
-  // Add these new properties for USB state
-  usbState: "not attached",
-  setUsbState: (state: USBStates) => set({ usbState: state }),
-}));
+      lastVirtualInput: "keyboard",
+
+      isPasteInProgress: false,
+      setPasteModeEnabled: (enabled: boolean): void => set({ isPasteInProgress: enabled }),
+
+      // Add these new properties for USB state
+      usbState: "not attached",
+      setUsbState: (state: USBStates) => set({ usbState: state }),
+    }),
+    {
+      name: "hid-ui",
+      storage: createJSONStorage(() => localStorage),
+      partialize: state => ({ lastVirtualInput: state.lastVirtualInput }),
+    },
+  ),
+);
 
 export const useUserStore = create<UserState>(set => ({
   user: null,
